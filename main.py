@@ -1,3 +1,5 @@
+from http.client import responses
+
 import google.generativeai as genai
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
@@ -23,6 +25,9 @@ genai.configure(api_key="AIzaSyAHXD1JE6z5u3oFTHtvGCg11JyZhACFPpQ")
 # Global variable to control the recording state
 stop_recording = threading.Event()
 
+CONST_PROMPT_FOR_GRAMMAR_CORRECTION = "Check the grammar for the following sentence correct it provide any better suggestions and give response in following way: {suggestion: text, originalText: promptSentenceReceived} following is the text please do for it:"
+
+
 class PromptRequest(BaseModel):
     prompt: str
 
@@ -31,6 +36,16 @@ def generate_story(request: PromptRequest):
     try:
         model = genai.GenerativeModel("gemini-1.5-flash")
         response = model.generate_content(request.prompt)
+        return {"generated_text": response.text}
+    except Exception as e:
+        return {"error": str(e)}
+
+@app.post("/gemini-ai/ask-suggestion")
+def generate_story(request: PromptRequest):
+    try:
+        prompt_request = PromptRequest(prompt=CONST_PROMPT_FOR_GRAMMAR_CORRECTION + "\n" + request.prompt)
+        model = genai.GenerativeModel("gemini-1.5-flash")
+        response = model.generate_content(prompt_request)
         return {"generated_text": response.text}
     except Exception as e:
         return {"error": str(e)}
@@ -73,3 +88,56 @@ def speech_to_text():
 def stop_speech_recording():
     stop_recording.set()  # Set the stop flag
     return {"message": "Recording stopped successfully"}
+
+@app.get("/continuous-speech-to-text")
+def continuous_speech_to_text():
+    recognizer = sr.Recognizer()
+    stop_recording.clear()  # Reset the stop flag when starting recording
+
+    with sr.Microphone() as source:
+        print("Adjusting for ambient noise...")
+        recognizer.adjust_for_ambient_noise(source)
+
+        print("Listening continuously without timeout until stop API is called...")
+        captured_text = ""
+
+        try:
+            while not stop_recording.is_set():  # Keep listening until stop signal
+                audio_data = recognizer.listen(source)  # No timeout, listens indefinitely
+
+                try:
+                    text = recognizer.recognize_google(audio_data)
+                    captured_text += f" {text}"
+                    print(f"Recognized: {text}")
+                except sr.UnknownValueError:
+                    print("Could not understand the audio, continuing...")
+                except sr.RequestError as e:
+                    raise HTTPException(status_code=500, detail=f"Request failed: {e}")
+
+            prompt_request = PromptRequest(prompt=CONST_PROMPT_FOR_GRAMMAR_CORRECTION + "\n" + captured_text.strip())
+            response = generate_story(prompt_request)
+            print(response)
+            return {"text": response}
+
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Error occurred: {str(e)}")
+
+@app.post("/stop-recording")
+def stop_speech_recording():
+    stop_recording.set()  # Set the stop flag to end recording
+    return {"message": "Recording stopped successfully"}
+
+
+@app.post("/gemini-ai/ask-suggestion")
+def ask_suggestion(request: PromptRequest):
+    try:
+        prompt_with_instruction = CONST_PROMPT_FOR_GRAMMAR_CORRECTION + "\n" + request.prompt
+        model = genai.GenerativeModel("gemini-1.5-flash")
+        response = model.generate_content(prompt_with_instruction)
+
+        # Extracting the suggestion from the model's response
+        suggestion = response.text.split("suggestion:")[1].split("originalText:")[0].strip()
+        return {"suggestion": suggestion, "originalText": request.prompt}
+
+    except Exception as e:
+        return {"error": str(e)}
