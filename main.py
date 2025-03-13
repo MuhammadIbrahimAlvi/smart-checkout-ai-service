@@ -1,13 +1,10 @@
-from http.client import responses
-
-import google.generativeai as genai
-from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
-import speech_recognition as sr
-from fastapi.middleware.cors import CORSMiddleware
-import time
 import threading
+
 import ollama
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+
 app = FastAPI()
 
 client = ollama.Client()
@@ -22,9 +19,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Configure the Generative AI API key
-genai.configure(api_key="AIzaSyAHXD1JE6z5u3oFTHtvGCg11JyZhACFPpQ")
-
 # Global variable to control the recording state
 stop_recording = threading.Event()
 
@@ -38,7 +32,6 @@ class PromptRequest(BaseModel):
 def generate_story(request: PromptRequest):
     try:
         response = client.generate(model, request.prompt)
-        print(response.response)
         return {"generated_text": response.response}
     except Exception as e:
         return {"error": str(e)}
@@ -56,11 +49,10 @@ def generate_story(request: PromptRequest):
 def ask_suggestion(request: PromptRequest):
     try:
         prompt_with_instruction = CONST_PROMPT_FOR_GRAMMAR_CORRECTION + "\n" + request.prompt
-        model = genai.GenerativeModel("gemini-1.5-flash")
-        response = model.generate_content(prompt_with_instruction)
+        response = client.generate(model, prompt_with_instruction)
 
         # Extracting the suggestion from the model's response
-        suggestion = response.text.split("suggestion:")[1].split("originalText:")[0].strip()
+        suggestion = response.response.split("suggestion:")[1].split("originalText:")[0].strip()
         return {"suggestion": suggestion, "originalText": request.prompt}
 
     except Exception as e:
@@ -70,7 +62,6 @@ def ask_suggestion(request: PromptRequest):
 def generate_story(request: PromptRequest):
     try:
        response = client.generate(model, request.prompt)
-       print(response.response)
        return response.response
     except Exception as e:
         return {"error": str(e)}
