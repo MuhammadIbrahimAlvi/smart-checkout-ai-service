@@ -7,8 +7,11 @@ import speech_recognition as sr
 from fastapi.middleware.cors import CORSMiddleware
 import time
 import threading
-
+import ollama
 app = FastAPI()
+
+client = ollama.Client()
+model = "llama3.2"
 
 # CORS middleware to allow requests from frontend (localhost:3000)
 app.add_middleware(
@@ -34,9 +37,9 @@ class PromptRequest(BaseModel):
 @app.post("/gemini-ai/generate-registration-questions")
 def generate_story(request: PromptRequest):
     try:
-        model = genai.GenerativeModel("gemini-1.5-flash")
-        response = model.generate_content(request.prompt)
-        return {"generated_text": response.text}
+        response = client.generate(model, request.prompt)
+        print(response.response)
+        return {"generated_text": response.response}
     except Exception as e:
         return {"error": str(e)}
 
@@ -44,89 +47,10 @@ def generate_story(request: PromptRequest):
 def generate_story(request: PromptRequest):
     try:
         prompt_request = PromptRequest(prompt=CONST_PROMPT_FOR_GRAMMAR_CORRECTION + "\n" + request.prompt)
-        model = genai.GenerativeModel("gemini-1.5-flash")
-        response = model.generate_content(prompt_request)
-        return {"generated_text": response.text}
+        response = client.generate(model, prompt_request)
+        return {"generated_text": response.response}
     except Exception as e:
         return {"error": str(e)}
-
-@app.get("/speech-to-text")
-def speech_to_text():
-    recognizer = sr.Recognizer()
-    stop_recording.clear()  # Reset the stop flag when starting recording
-
-    with sr.Microphone() as source:
-        print("Adjusting for ambient noise...")
-        recognizer.adjust_for_ambient_noise(source)
-
-        print("Listening continuously for up to 120 seconds...")
-        start_time = time.time()
-        captured_text = ""
-
-        try:
-            while time.time() - start_time < 120 and not stop_recording.is_set():
-                audio_data = recognizer.listen(source, timeout=5, phrase_time_limit=10)
-
-                try:
-                    text = recognizer.recognize_google(audio_data)
-                    captured_text += f" {text}"
-                    print(f"Recognized: {text}")
-                except sr.UnknownValueError:
-                    print("Could not understand the audio, continuing...")
-                except sr.RequestError as e:
-                    raise HTTPException(status_code=500, detail=f"Request failed: {e}")
-
-            if stop_recording.is_set():
-                print("Recording stopped by user.")
-
-            return {"text": captured_text.strip()}
-
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Error occurred: {str(e)}")
-
-@app.post("/stop-recording")
-def stop_speech_recording():
-    stop_recording.set()  # Set the stop flag
-    return {"message": "Recording stopped successfully"}
-
-@app.get("/continuous-speech-to-text")
-def continuous_speech_to_text():
-    recognizer = sr.Recognizer()
-    stop_recording.clear()  # Reset the stop flag when starting recording
-
-    with sr.Microphone() as source:
-        print("Adjusting for ambient noise...")
-        recognizer.adjust_for_ambient_noise(source)
-
-        print("Listening continuously without timeout until stop API is called...")
-        captured_text = ""
-
-        try:
-            while not stop_recording.is_set():  # Keep listening until stop signal
-                audio_data = recognizer.listen(source)  # No timeout, listens indefinitely
-
-                try:
-                    text = recognizer.recognize_google(audio_data)
-                    captured_text += f" {text}"
-                    print(f"Recognized: {text}")
-                except sr.UnknownValueError:
-                    print("Could not understand the audio, continuing...")
-                except sr.RequestError as e:
-                    raise HTTPException(status_code=500, detail=f"Request failed: {e}")
-
-            prompt_request = PromptRequest(prompt=CONST_PROMPT_FOR_GRAMMAR_CORRECTION + "\n" + captured_text.strip())
-            response = generate_story(prompt_request)
-            print(response)
-            return {"text": response}
-
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Error occurred: {str(e)}")
-
-@app.post("/stop-recording")
-def stop_speech_recording():
-    stop_recording.set()  # Set the stop flag to end recording
-    return {"message": "Recording stopped successfully"}
-
 
 @app.post("/gemini-ai/ask-suggestion")
 def ask_suggestion(request: PromptRequest):
@@ -139,5 +63,14 @@ def ask_suggestion(request: PromptRequest):
         suggestion = response.text.split("suggestion:")[1].split("originalText:")[0].strip()
         return {"suggestion": suggestion, "originalText": request.prompt}
 
+    except Exception as e:
+        return {"error": str(e)}
+
+@app.post("/ollama/test")
+def generate_story(request: PromptRequest):
+    try:
+       response = client.generate(model, request.prompt)
+       print(response.response)
+       return response.response
     except Exception as e:
         return {"error": str(e)}
