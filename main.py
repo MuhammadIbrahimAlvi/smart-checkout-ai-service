@@ -58,7 +58,7 @@ def ask_suggestion(request: PromptRequest):
     except Exception as e:
         return {"error": str(e)}
 
-@app.post("/ollama/test")
+@app.post("/conversational-talk")
 def generate_story(request: PromptRequest):
     try:
        response = client.generate(model, request.prompt)
